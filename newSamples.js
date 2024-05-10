@@ -57,17 +57,16 @@ async function convertAndAssignFiles(files, outputDir) {
         const padNumber = Object.keys(pads)[i];
         const outputFile = path.join(outputDir, `${padNumber}.wav`);
 
-        // Example padNumber: 'A0000010'
         const match = padNumber.match(/^([A-Z])(\d+)$/);
         if (!match) {
             throw new Error('Invalid pad number format');
         }
         const bankLetter = match[1];
-        const padNum = parseInt(match[2], 10); // Convert the numerical part to an integer
+        const padNum = parseInt(match[2], 10);
 
-        // Calculate zero-based index for sampleIndex
-        const sampleIndex = padNum - 1; // Convert to zero-based index
-        const sampleLabel = `${bankLetter}${padNum}`; // Construct the sample label (e.g., 'A10')
+        const bankIndex = bankLetter.charCodeAt(0) - 'A'.charCodeAt(0);
+        const sampleIndex = bankIndex * 12 + (padNum - 1);
+        const sampleLabel = `${bankLetter}${padNum}`;
 
         await new Promise((resolve, reject) => {
             ffmpeg(file)
@@ -82,21 +81,18 @@ async function convertAndAssignFiles(files, outputDir) {
                     let data = fs.readFileSync(outputFile);
                     let wav = AudioWAV.fromFile(data);
 
-                    // Modify the format chunk
                     const oldFormat = wav.chunks.find(chunk => chunk.type === 'format');
                     const newFormat = AudioWAV.encodeFMT({
                         ...oldFormat.value,
-                        extraParamSize: 0 // Ensure this is set even if it's zero
+                        extraParamSize: 0
                     });
 
-                    // Add Roland-specific chunk
                     const rlnd = AudioWAV.encodeRLND({
                         device: 'roifspsx',
                         sampleIndex: sampleIndex,
                         sampleLabel: sampleLabel
                     });
 
-                    // Rebuild the chunks array
                     wav.chunks = [
                         { type: 'header', chunk: wav.chunks[0].chunk },
                         { type: 'format', chunk: newFormat },
@@ -104,7 +100,6 @@ async function convertAndAssignFiles(files, outputDir) {
                         ...wav.chunks.filter(chunk => !['header', 'format', 'roland'].includes(chunk.type))
                     ];
 
-                    // Calculate the total size, include `WAVE` text (4 bytes)
                     const size = wav.chunks.reduce((total, chunk) => {
                         if (['format', 'roland', 'data'].includes(chunk.type)) {
                             total += chunk.chunk.length;
@@ -112,7 +107,6 @@ async function convertAndAssignFiles(files, outputDir) {
                         return total;
                     }, 4);
 
-                    // Build the binary data
                     const header = AudioWAV.encodeHeader({ size });
                     const parts = wav.chunks.reduce((arr, chunk) => {
                         if (['format', 'roland', 'data'].includes(chunk.type)) {
@@ -124,16 +118,14 @@ async function convertAndAssignFiles(files, outputDir) {
 
                     fs.writeFileSync(outputFile, output);
 
-                    // Update pad info with the byte size
                     pads[padNumber].filename = outputFile;
                     pads[padNumber].size = output.length;
                     pads[padNumber].originalSampleStart = 512;
-                    pads[padNumber].originalSampleEnd = size + 8; // Using byte size
+                    pads[padNumber].originalSampleEnd = size + 8;
                     pads[padNumber].userSampleStart = 512;
-                    pads[padNumber].userSampleEnd = size + 8; // Using byte size
-                    pads[padNumber].avaliable = false;
+                    pads[padNumber].userSampleEnd = size + 8;
+                    pads[padNumber].available = false;
 
-                    // Log chunk sizes
                     console.log(`Header Size: ${header.length}`);
                     console.log(`Format Chunk Size: ${newFormat.length}`);
                     console.log(`Roland Chunk Size: ${rlnd.length}`);
@@ -145,14 +137,8 @@ async function convertAndAssignFiles(files, outputDir) {
         });
     }
 
-    // Log final pads object before writing to file
-
-    // Encode and write PAD_INFO.BIN
     const parts = Object.values(pads).map(pad => AudioPadInfo.encodePad(pad));
     const padInfoData = Buffer.concat(parts);
-    Object.values(pads).forEach(pad => {
-        console.log(`Pad ${pad.label}: Filename: ${pad.filename}, Sample Start: ${pad.originalSampleStart}, Sample End: ${pad.originalSampleEnd}`);
-    });
     fs.writeFileSync(path.join(outputDir, 'PAD_INFO.BIN'), padInfoData);
 }
 

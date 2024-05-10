@@ -35,5 +35,5 @@ function readWavHeader(filePath) {
   }
 }
 
-const filePath = '/Users/anthony/Desktop/newsamples/A0000001.WAV';
+const filePath = '/Users/anthony/Desktop/newsamples/F0000009.WAV';
 readWavHeader(filePath);
