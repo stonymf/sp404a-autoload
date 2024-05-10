@@ -10,8 +10,8 @@ function processAudio(filePath) {
         fs.mkdirSync(dirName);
     }
 
-    // Command to detect silence and get timestamps
-    const command = `ffmpeg -i "${filePath}" -af silencedetect=noise=-30dB:d=0.5 -f null - 2>&1 | grep "silence_start" | awk '{print $5}'`;
+    // Command to detect silence and get timestamps for both starts and ends
+    const command = `ffmpeg -i "${filePath}" -af silencedetect=noise=-30dB:d=0.5 -f null - 2>&1 | grep "silence_" | awk '{print $1 " " $5}'`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -19,31 +19,45 @@ function processAudio(filePath) {
             return;
         }
 
-        const silenceStarts = stdout.trim().split('\n').map(parseFloat);
-        let lastEnd = 0;
-        const buffer = 0.1; // 100 milliseconds buffer
+        const results = stdout.trim().split('\n');
+        const silenceStarts = [];
+        const silenceEnds = [];
 
-        silenceStarts.forEach((silenceStart, index) => {
-            const start = Math.max(0, lastEnd - buffer); // Ensure start is not negative
-            const end = Math.max(0, silenceStart + buffer); // Add buffer to the end of the sound segment
+        results.forEach(result => {
+            const parts = result.split(' ');
+            if (parts[0] === 'silence_start:') {
+                silenceStarts.push(parseFloat(parts[1]));
+            } else if (parts[0] === 'silence_end:') {
+                silenceEnds.push(parseFloat(parts[1]));
+            }
+        });
+
+        let slices = [];
+        let lastEnd = 0;
+
+        // Handle case where file starts with sound
+        if (silenceStarts[0] > 0) {
+            slices.push({ start: 0, end: silenceStarts[0] });
+        }
+
+        // Process silence starts and ends to determine slice boundaries
+        for (let i = 0; i < silenceEnds.length; i++) {
+            const start = silenceEnds[i];
+            const end = silenceStarts[i + 1] || undefined; // undefined will take till the end of the file
+            if (end) {
+                slices.push({ start: start, end: end });
+            }
+        }
+
+        // Create slices based on calculated times
+        slices.forEach((slice, index) => {
             const outputFile = path.join(dirName, `slice_${index}.wav`);
-            const ffmpegSliceCommand = `ffmpeg -i "${filePath}" -ss ${start} -to ${end} -c copy "${outputFile}"`;
+            const ffmpegSliceCommand = `ffmpeg -i "${filePath}" -ss ${slice.start} -to ${slice.end} -c copy "${outputFile}"`;
             exec(ffmpegSliceCommand, (error) => {
                 if (error) {
                     console.error(`exec error: ${error}`);
                 }
             });
-            lastEnd = silenceStart; // Update lastEnd to the start of the current silence
-        });
-
-        // Handle the last segment after the final silence
-        const finalStart = lastEnd - buffer;
-        const outputFile = path.join(dirName, `slice_${silenceStarts.length}.wav`);
-        const ffmpegSliceCommand = `ffmpeg -i "${filePath}" -ss ${finalStart} -c copy "${outputFile}"`;
-        exec(ffmpegSliceCommand, (error) => {
-            if (error) {
-                console.error(`exec error: ${error}`);
-            }
         });
     });
 }
