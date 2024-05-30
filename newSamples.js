@@ -7,7 +7,8 @@ const ffmpegPath = require('ffmpeg-static-electron').path;
 
 ffmpeg.setFfmpegPath(ffmpegPath.replace('app.asar', 'app.asar.unpacked'));
 
-const directory = '/Users/anthony/Library/CloudStorage/Dropbox/~samples/404';
+// const directory = '/Users/anthony/Library/CloudStorage/Dropbox/~samples/404';
+const directory = process.argv[2] || '/Users/anthony/Library/CloudStorage/Dropbox/~samples/404';
 const totalPads = 120; // Total number of pads
 
 function getRandomFiles(dir, count) {
